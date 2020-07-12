@@ -1,0 +1,62 @@
+image: mcr.microsoft.com/dotnet/core/sdk:latest
+
+variables:
+  ### Make sure following variables are registered in CI.
+  #DOCKER_REGISTRY
+  #DOCKER_IMAGE_NAME
+  #DOCKER_REGISTRY_LOGIN
+  #DOCKER_REGISTRY_PASSWORD
+  #NUGET_PACKAGE_REGISTRY_KEY
+  #NUGET_PACKAGE_REGISTRY_ADDRESS
+
+
+stages:
+  - test
+  - build
+  - publish
+
+
+test:
+  stage: test
+  script:
+    - dotnet test
+
+build_client:
+  stage: build
+  before_script:
+    - mkdir client_nuget
+  script:
+    - dotnet restore
+    - dotnet publish Service.Template.Client/Service.Template.Client.csproj -c release
+    - mv Service.Template.Client/bin/release/*.nupkg client_nuget/
+  artifacts:
+    name: service.template.client
+    paths:
+      - client_nuget/
+
+publish_client:
+  stage: publish
+  script:
+    - dotnet nuget push client_nuget/*.nupkg -k ${NUGET_PACKAGE_REGISTRY_KEY} -s ${NUGET_PACKAGE_REGISTRY_ADDRESS}
+
+publish_service_image:
+  stage: publish
+  image: docker:19.03.12
+
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+
+  services:
+    - name: docker:19.03.12-dind
+
+  before_script:
+    - docker info
+
+  script:
+    - echo ${DOCKER_REGISTRY}
+    - echo ${DOCKER_IMAGE_NAME}
+    - DOCKER_IMAGE_TAG=`date +%Y.%m.%d.%H%M`
+    - echo ${DOCKER_IMAGE_TAG}
+    - docker login --username ${DOCKER_REGISTRY_LOGIN} --password ${DOCKER_REGISTRY_PASSWORD}
+    - docker build -t ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} -f Dockerfile .
+    - docker push ${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
